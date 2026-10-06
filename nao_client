@@ -6,6 +6,7 @@ NAO_IP = "192.168.1.100"  # Η IP του NAO
 SERVER_URL = "http://192.168.1.50:5000/chat"  
 
 tts = ALProxy("ALTextToSpeech", NAO_IP, 9559)
+tts.setLanguage("Greek")
 
 def ask_gemini(prompt_text):
     data = json.dumps({"prompt": prompt_text})
