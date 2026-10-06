@@ -1,0 +1,20 @@
+import urllib.request
+import json
+
+url = "http://127.0.0.1:5000/chat"
+
+payload = {
+    "prompt": "Γεια σου NAO! Πες μου με λίγα λόγια τι μπορείς να κάνεις."
+}
+
+data = json.dumps(payload).encode('utf-8')
+req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+
+try:
+    response = urllib.request.urlopen(req)
+    result = json.loads(response.read().decode('utf-8'))
+    print("\n--- Απάντηση από Gemini (μέσω Server) ---")
+    print(result.get("response"))
+    print("------------------------------------------\n")
+except Exception as e:
+    print("Σφάλμα κατά την επικοινωνία:", e)
