@@ -1,0 +1,24 @@
+from naoqi import ALProxy
+import urllib2
+import json
+
+NAO_IP = "192.168.1.100"  # Η IP του NAO
+SERVER_URL = "http://192.168.1.50:5000/chat"  
+
+tts = ALProxy("ALTextToSpeech", NAO_IP, 9559)
+
+def ask_gemini(prompt_text):
+    data = json.dumps({"prompt": prompt_text})
+    req = urllib2.Request(SERVER_URL, data, {'Content-Type': 'application/json'})
+    try:
+        response = urllib2.urlopen(req)
+        res_json = json.loads(response.read())
+        answer = res_json.get("response", "")
+        
+        # Ο NAO μιλάει
+        tts.say(answer.encode('utf-8'))
+    except Exception as e:
+        print("Error communicating with bridge server:", e)
+
+# Δοκιμαστική κλήση
+ask_gemini("Γεια σου NAO, τι κάνεις;")
