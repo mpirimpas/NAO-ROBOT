@@ -5,9 +5,9 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-API_KEY = "AAQ.Ab8RN6LJ4KheRD_l_2qs4AocXnvY8v-VHeqtGnsHoA8nJsRaqA"
+# OAuth / Auth Token
+AUTH_TOKEN = "AAQ.Ab8RN6LJ4KheRD_1_2qs4AocXnvY8v-VHeqtGnsHoA8nJsRaqA"
 
-SYSTEM_PROMPT = """
 SYSTEM_PROMPT = """
 Είσαι ο NAO, ένα φιλικό κοινωνικό ρομπότ.
 1. Απαντάς ΑΠΟΚΛΕΙΣΤΙΚΑ και μόνο στη ελληνική γλώσσα.
@@ -24,7 +24,7 @@ def chat():
     if not user_text:
         return jsonify({"error": "No prompt provided"}), 400
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
     payload = {
         "system_instruction": {
@@ -37,7 +37,11 @@ def chat():
         ]
     }
 
-    headers = {'Content-Type': 'application/json'}
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {AUTH_TOKEN}'
+    }
+
     req_data = json.dumps(payload).encode('utf-8')
     req = urllib.request.Request(url, data=req_data, headers=headers, method='POST')
 
