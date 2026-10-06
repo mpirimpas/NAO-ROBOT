@@ -1,0 +1,57 @@
+import json
+import urllib.request
+import urllib.error
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+API_KEY = "AAQ.Ab8RN6LJ4KheRD_l_2qs4AocXnvY8v-VHeqtGnsHoA8nJsRaqA"
+
+SYSTEM_PROMPT = """
+Είσαι ο NAO, ένα φιλικό κοινωνικό ρομπότ. 
+Απαντάς πάντα με σύντομες, φυσικές προτάσεις (1-2 προτάσεις το πολύ), 
+κατάλληλες για προφορική συνομιλία. Αποφεύγεις τα σύμβολα όπως *, #, ή URLs.
+"""
+
+@app.route('/chat', methods=['POST'])
+def chat():
+    data = request.get_json()
+    user_text = data.get("prompt", "")
+    
+    if not user_text:
+        return jsonify({"error": "No prompt provided"}), 400
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+
+    payload = {
+        "system_instruction": {
+            "parts": [{"text": SYSTEM_PROMPT}]
+        },
+        "contents": [
+            {
+                "parts": [{"text": user_text}]
+            }
+        ]
+    }
+
+    headers = {'Content-Type': 'application/json'}
+    req_data = json.dumps(payload).encode('utf-8')
+    req = urllib.request.Request(url, data=req_data, headers=headers, method='POST')
+
+    try:
+        with urllib.request.urlopen(req) as response:
+            res_body = response.read().decode('utf-8')
+            res_json = json.loads(res_body)
+            text_response = res_json['candidates'][0]['content']['parts'][0]['text']
+            return jsonify({"response": text_response})
+            
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8')
+        print(f"\n❌ [GEMINI API ERROR]: {error_body}\n")
+        return jsonify({"error": error_body}), e.code
+    except Exception as e:
+        print(f"\n❌ [SERVER ERROR]: {e}\n")
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
