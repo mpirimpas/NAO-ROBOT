@@ -1,3 +1,5 @@
 py server.py
 py test_chat.py
 nao_gemini_env\Scripts\activate # Ενεργοποίηση Virtual Environment
+DOS
+set GEMINI_API_KEY=το_api_key_σου_εδώ
