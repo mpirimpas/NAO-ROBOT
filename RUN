@@ -1,2 +1,3 @@
 py server.py
 py test_chat.py
+nao_gemini_env\Scripts\activate # Ενεργοποίηση Virtual Environment
