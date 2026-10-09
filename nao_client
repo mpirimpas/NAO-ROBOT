@@ -1,25 +1,129 @@
-from naoqi import ALProxy
-import urllib2
-import json
+import time
+import subprocess
+import requests
+import paramiko
 
-NAO_IP = "192.168.1.100"  # Η IP του NAO
-SERVER_URL = "http://192.168.1.50:5000/chat"  
+try:
+    import naoqi
+    from naoqi import ALProxy
+except ImportError:
+    ALProxy = None
 
-tts = ALProxy("ALTextToSpeech", NAO_IP, 9559)
-tts.setLanguage("Greek")
+IP = '10.1.95.144'
+SERVER_URL = 'http://192.168.2.4:5000/chat'  # Η διεύθυνση του Flask server σου
 
-def ask_gemini(prompt_text):
-    data = json.dumps({"prompt": prompt_text})
-    req = urllib2.Request(SERVER_URL, data, {'Content-Type': 'application/json'})
+if ALProxy:
+    tts = ALProxy("ALTextToSpeech", IP, 9559)
+    audio_recorder = ALProxy("ALAudioRecorder", IP, 9559)
+else:
+    tts = None
+    audio_recorder = None
+
+def record_audio(soundRecordPath, localPath):
+    if audio_recorder:
+        audio_recorder.startMicrophonesRecording(soundRecordPath, "wav", 16000, (0, 0, 1, 0))
+        time.sleep(5)
+        audio_recorder.stopMicrophonesRecording()
+
+        ssh_client = paramiko.SSHClient()
+        ssh_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh_client.connect(hostname=IP, port=22, username='nao', password='nao')
+        ftp_client = ssh_client.open_sftp()
+        ftp_client.get(soundRecordPath, localPath)
+        ftp_client.close()
+        ssh_client.close()
+    else:
+        print("[Mock Mode] Ηχογράφηση προσομοίωσης...")
+        time.sleep(2)
+
+    print("Audio recorded successfully.")
+
+def run_script(script_path, txt_path):
+    conda_environment_name = 'test'
+
     try:
-        response = urllib2.urlopen(req)
-        res_json = json.loads(response.read())
-        answer = res_json.get("response", "")
-        
-        # Ο NAO μιλάει
-        tts.say(answer.encode('utf-8'))
-    except Exception as e:
-        print("Error communicating with bridge server:", e)
+        subprocess.check_call(['conda', 'run', '-n', conda_environment_name, 'python', script_path])
+        print("Subprocess completed successfully.")
+    except subprocess.CalledProcessError as e:
+        print('Error in subprocess execution:', e)
 
-# Δοκιμαστική κλήση
-ask_gemini("Γεια σου NAO, τι κάνεις;")
+    try:
+        with open(txt_path, 'r', encoding='utf-8') as file:
+            lines = file.readlines()
+            concatenated_text = ' '.join(lines).replace('\n', '').strip().lower()
+    except Exception as e:
+        print(f"Error reading text file: {e}")
+        concatenated_text = ""
+
+    print(f"Normalized Text: '{concatenated_text}'")
+    return concatenated_text
+
+def ask_gemini_server(user_text):
+    """Στέλνει το κείμενο στον Flask server και επιστρέφει την απάντηση του Gemini"""
+    try:
+        payload = {'text': user_text}
+        response = requests.post(SERVER_URL, json=payload, timeout=15)
+
+        if response.status_code == 200:
+            data = response.json()
+            return data.get('response', 'Προέκυψε σφάλμα στη λήψη της απάντησης.')
+        else:
+            print(f"Server Error Status: {response.status_code}")
+            return "Συγγνώμη, υπήρξε σφάλμα στον διακομιστή."
+    except Exception as e:
+        print(f"Connection error to server: {str(e)}")
+        return "Δεν ήταν δυνατή η σύνδεση με τον διακομιστή."
+
+
+if __name__ == "__main__":
+    soundRecordPath = "/home/nao/audio.wav"
+    localPath = "/home/nadasamir/Desktop/cognitive/audio/audio.wav"
+
+    speech2txt_script_path = '/home/nadasamir/Desktop/cognitive/speech2txt.py'
+    activation_txt_path = '/home/nadasamir/Desktop/cognitive/audio/activation.txt'
+
+    sentence = ""
+
+    activation = 'καλημερα'
+    deactivation = 'αντιο'
+    not_recognized = "δεν σε ακουσα καλα"
+
+    if tts:
+        try:
+            tts.setLanguage('Greek')
+        except Exception:
+            pass
+
+    while True:
+        while sentence != activation:
+            record_audio(soundRecordPath, localPath)
+            sentence = run_script(speech2txt_script_path, activation_txt_path)
+            if sentence == not_recognized:
+                if tts:
+                    tts.say(not_recognized)
+
+        if tts:
+            tts.say('Γεια σου!')
+
+        while True:
+            if tts:
+                tts.say("Πώς μπορώ να σε βοηθήσω;")
+            record_audio(soundRecordPath, localPath)
+            sentence = run_script(speech2txt_script_path, activation_txt_path)
+
+            if sentence == not_recognized:
+                if tts:
+                    tts.say(not_recognized)
+                continue
+
+            if sentence == deactivation:
+                if tts:
+                    tts.say("Τα λέμε")
+                break
+
+            print(f"Αποστολή στον Server: {sentence}")
+            response = ask_gemini_server(sentence)
+
+            print(f"Απάντηση από Server: {response}")
+            if tts:
+                tts.say(response)
