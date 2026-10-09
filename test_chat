@@ -1,20 +1,24 @@
-import urllib.request
-import json
+import requests
 
-url = "http://127.0.0.1:5000/chat"
+SERVER_URL = 'http://127.0.0.1:5000/chat'
 
-payload = {
-    "prompt": "Γεια σου NAO! Πες μου με λίγα λόγια τι μπορείς να κάνεις."
-}
+def test_server():
+    test_message = "γεια σου ρομπότ, πώς είσαι;"
+    payload = {'text': test_message}
 
-data = json.dumps(payload).encode('utf-8')
-req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+    print(f"Αποστολή στον Server: '{test_message}'")
 
-try:
-    response = urllib.request.urlopen(req)
-    result = json.loads(response.read().decode('utf-8'))
-    print("\n--- Απάντηση από Gemini (μέσω Server) ---")
-    print(result.get("response"))
-    print("------------------------------------------\n")
-except Exception as e:
-    print("Σφάλμα κατά την επικοινωνία:", e)
+    try:
+        response = requests.post(SERVER_URL, json=payload, timeout=15)
+
+        if response.status_code == 200:
+            data = response.json()
+            print(f"Απάντηση από Server: {data.get('response')}")
+        else:
+            print(f"Σφάλμα Server, Status Code: {response.status_code}")
+            print(response.text)
+    except Exception as e:
+        print(f"Αποτυχία σύνδεσης: {e}")
+
+if __name__ == '__main__':
+    test_server()
