@@ -1,70 +1,43 @@
-import json
-import urllib.request
-import urllib.error
+import os
 from flask import Flask, request, jsonify
+import google.generativeai as genai
 
+# Αρχικοποίηση Flask app
 app = Flask(__name__)
 
-AUTH_TOKEN = ""
+# Ρύθμιση του API key για το Gemini (αντικατάστησε με το δικό σου API Key)
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY"))
 
-SYSTEM_PROMPT = """
-Είσαι ο ΝΑΟ, ένα φιλικό κοινωνικό ρομπότ.
-1. Απαντάς ΑΠΟΚΛΕΙΣΤΙΚΑ και μόνο στη ελληνική γλώσσα.
-2. Οι απαντήσεις σου πρέπει να είναι πολύ σύντομες (1 με 2 προτάσεις το πολύ), κατάλληλες για προφορική συνομιλία.
-3. Χρησιμοποιείς απλό, φυσικό και φιλικό τόνο.
-4. Αποφεύγεις εντελώς ειδικούς χαρακτήρες, σύμβολα (όπως *, #, URLs) ή αγγλικούς όρους, ώστε να μπορεί να τα διαβάσει σωστά η μηχανή συνθετικής ομιλίας.
-"""
+# Αρχικοποίηση του μοντέλου Gemini
+model = genai.GenerativeModel('gemini-2.0-flash')
 
 @app.route('/chat', methods=['POST'])
 def chat():
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "No JSON provided"}), 400
-
-    user_text = data.get("prompt", "") or data.get("text", "")
-
-    if not user_text:
-        return jsonify({"error": "No prompt provided"}), 400
-
     try:
-        payload_data = {
-            "contents": [
-                {
-                    "parts": [
-                        {"text": f"{SYSTEM_PROMPT}\n\nΧρήστης: {user_text}"}
-                    ]
-                }
-            ]
-        }
+        data = request.get_json(force=True, silent=True)
+        
+        if not data or 'prompt' not in data:
+            return jsonify({"response": "Δεν έλαβα κάποιο μήνυμα."}), 400
+        
+        user_prompt = data.get('prompt', '').strip()
+        
+        if not user_prompt:
+            return jsonify({"response": "Το μήνυμα ήταν κενό."}), 400
+        
+        print("Έλαβα από NAO:", user_prompt)
 
-        json_data = json.dumps(payload_data).encode('utf-8')
+        # Αποστολή στο Gemini API
+        gemini_response = model.generate_content(user_prompt)
+        reply_text = gemini_response.text
 
-        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key={AUTH_TOKEN}"
+        print("Απάντηση Gemini:", reply_text)
 
-        req = urllib.request.Request(
-            api_url,
-            data=json_data,
-            headers={'Content-Type': 'application/json'},
-            method='POST'
-        )
+        return jsonify({"response": reply_text})
 
-        with urllib.request.urlopen(req) as response:
-            res_body = response.read().decode('utf-8')
-            res_json = json.loads(res_body)
-            bot_reply = res_json['candidates'][0]['content']['parts'][0]['text']
-            bot_reply = bot_reply.strip()
-
-            print(f"Απάντηση Gemini: {bot_reply}")
-            return jsonify({"response": bot_reply})
-
-    except urllib.error.HTTPError as e:
-        error_message = e.read().decode('utf-8')
-        print(f"HTTP Error: {error_message}")
-        return jsonify({"error": error_message}), e.code
     except Exception as e:
-        print(f"Σφάλμα: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
+        print("Σφάλμα στον Server:", str(e))
+        return jsonify({"response": "Προέκυψε εσωτερικό σφάλμα στον server."}), 500
 
 if __name__ == '__main__':
+    # Ανοίγει σε όλες τις διεπαφές (0.0.0.0) στη θύρα 5000
     app.run(host='0.0.0.0', port=5000, debug=True)
