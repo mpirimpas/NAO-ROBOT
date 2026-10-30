@@ -1,0 +1,189 @@
+class MyClass(GeneratedClass):
+    def __init__(self):
+        GeneratedClass.__init__(self, False)
+
+    def onLoad(self):
+        try:
+            self.asr = self.session().service("ALSpeechRecognition")
+        except Exception as e:
+            self.asr = None
+            self.logger.error(e)
+
+        try:
+            self.tts = self.session().service("ALTextToSpeech")
+        except Exception as e:
+            self.tts = None
+            self.logger.error(e)
+
+        self.memory = self.session().service("ALMemory")
+        from threading import Lock
+        self.bIsRunning = False
+        self.mutex = Lock()
+        self.hasSubscribed = False
+        self.BIND_PYTHON(self.getName(), "onWordRecognized")
+
+    def onUnload(self):
+        from threading import Lock
+        self.mutex.acquire()
+        try:
+            if (self.bIsRunning):
+                if (self.hasSubscribed):
+                    try:
+                        self.memory.unsubscribeToEvent("WordRecognized", self.getName())
+                    except:
+                        pass
+                if (self.asr):
+                    try:
+                        self.asr.pause(True)
+                        self.asr.unsubscribe("MyASRModule")
+                    except:
+                        pass
+        except Exception, e:
+            self.mutex.release()
+            raise e
+        self.bIsRunning = False
+        self.mutex.release()
+
+    def onInput_onStart(self):
+        from threading import Lock
+        self.mutex.acquire()
+        if(self.bIsRunning):
+            self.mutex.release()
+            return
+        self.bIsRunning = True
+        try:
+            if self.asr:
+                try:
+                    self.asr.pause(True)
+                except:
+                    pass
+
+                try:
+                    self.asr.unsubscribe("MyASRModule")
+                except:
+                    pass
+
+                try:
+                    self.asr.setLanguage("Greek")
+                except Exception as lang_err:
+                    self.logger.warning("Δεν μπόρεσε να ορίσει γλώσσα 'Greek': " + str(lang_err))
+
+                try:
+                    raw_vocab = self.getParameter("Word list")
+                except:
+                    raw_vocab = "γεια σου; ναο; τι κανεις"
+
+                vocab_list = [w.strip() for w in raw_vocab.split(';') if w.strip()]
+                if not vocab_list:
+                    vocab_list = ["γεια σου", "ναο", "τι κανεις"]
+
+                try:
+                    spotting = self.getParameter("Enable word spotting")
+                except:
+                    spotting = True
+
+                self.asr.setVocabulary(vocab_list, spotting)
+
+                try:
+                    self.asr.subscribe("MyASRModule")
+                except:
+                    pass
+
+                try:
+                    self.asr.pause(False)
+                except:
+                    pass
+
+            self.memory.subscribeToEvent("WordRecognized", self.getName(), "onWordRecognized")
+            self.hasSubscribed = True
+
+        except Exception, e:
+            self.mutex.release()
+            self.onUnload()
+            raise e
+        self.mutex.release()
+
+    def onInput_onStop(self):
+        if( self.bIsRunning ):
+            self.onUnload()
+            self.onStopped()
+
+    def onWordRecognized(self, key, value, message):
+        try:
+            confidence_threshold = self.getParameter("Confidence threshold (%)") / 100.
+        except:
+            confidence_threshold = 0.3
+
+        if(len(value) > 1 and value[1] >= confidence_threshold):
+            recognized_word = value[0]
+            if not recognized_word or recognized_word == "None":
+                return
+
+            self.logger.info("Αναγνωρίστηκε λέξη: " + str(recognized_word))
+
+            # Παύση του ASR για να μπορεί το TTS να μιλήσει απρόσκοπτα
+            if self.asr:
+                try:
+                    self.asr.pause(True)
+                except:
+                    pass
+
+            self.send_to_server(recognized_word)
+
+            # Επαναφορά του ASR
+            if self.asr:
+                try:
+                    self.asr.pause(False)
+                except:
+                    pass
+
+            self.wordRecognized(recognized_word)
+        else:
+            self.onNothing()
+
+    def clean_text(self, text):
+        import re
+        text = re.sub(r'[*#_`~]', '', text)
+        return text.strip()
+
+    def send_to_server(self, prompt_text):
+        if not prompt_text or prompt_text == "None":
+            return
+
+        import urllib2
+        import json
+
+        url = "http://192.168.0.173:5000/chat"
+        data = {"prompt": str(prompt_text)}
+
+        try:
+            req = urllib2.Request(url)
+            req.add_header('Content-Type', 'application/json')
+
+            response = urllib2.urlopen(req, json.dumps(data))
+            result = json.loads(response.read().decode('utf-8'))
+
+            raw_reply = result.get("response", "Δεν έλαβα απάντηση.")
+            reply_text = self.clean_text(raw_reply)
+
+            self.logger.info("Απάντηση από server: " + str(reply_text.encode('utf-8')))
+
+            if self.tts:
+                try:
+                    # Δοκίμασε να το αλλάξεις σε "English" αν δεν έχεις ελληνική φωνή στο ρομπότ
+                    self.tts.setLanguage("Greek")
+                except:
+                    pass
+
+                try:
+                    self.tts.setVolume(1.0)
+                except:
+                    pass
+
+                # Εκφώνηση κειμένου
+                self.tts.say(reply_text.encode('utf-8'))
+
+        except Exception as e:
+            self.logger.error("Σφάλμα επικοινωνίας/TTS: " + str(e))
+            if self.tts:
+                self.tts.say("Connection error.")
