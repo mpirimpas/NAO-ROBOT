@@ -1,0 +1,83 @@
+class MyClass(GeneratedClass):
+    def __init__(self):
+        GeneratedClass.__init__(self, False)
+
+    def onLoad(self):
+        try:
+            self.asr = self.session().service("ALSpeechRecognition")
+        except Exception as e:
+            self.asr = None
+            self.logger.error(e)
+
+        self.memory = self.session().service("ALMemory")
+        from threading import Lock
+        self.bIsRunning = False
+        self.mutex = Lock()
+        self.hasPushed = False
+        self.hasSubscribed = False
+        self.BIND_PYTHON(self.getName(), "onWordRecognized")
+
+    def onUnload(self):
+        from threading import Lock
+        self.mutex.acquire()
+        try:
+            if (self.bIsRunning):
+                if (self.hasSubscribed):
+                    self.memory.unsubscribeToEvent("WordRecognized", self.getName())
+                if (self.hasPushed and self.asr):
+                    self.asr.popContexts()
+        except RuntimeError, e:
+            self.mutex.release()
+            raise e
+        self.bIsRunning = False;
+        self.mutex.release()
+
+    def onInput_onStart(self):
+        from threading import Lock
+        self.mutex.acquire()
+        if(self.bIsRunning):
+            self.mutex.release()
+            return
+        self.bIsRunning = True
+        try:
+            if self.asr:
+                # --- ΡΥΘΜΙΣΗ ΓΙΑ ΕΛΛΗΝΙΚΑ ---
+                try:
+                    self.asr.setLanguage("Greek")
+                except Exception as lang_err:
+                    self.logger.warning("Δεν μπόρεσε να ορίσει γλώσσα 'Greek': " + str(lang_err))
+
+                self.asr.pushContexts()
+
+            self.hasPushed = True
+
+            if self.asr:
+                # Παίρνει τις λέξεις από τις παραμέτρους του κουτιού χωρισμένες με Ελληνικό ή αγγλικό ερωτηματικό
+                raw_vocab = self.getParameter("Word list")
+                vocab_list = [w.strip() for w in raw_vocab.split(';') if w.strip()]
+
+                # Αν η λίστα είναι κενή, βάζουμε μερικές ελληνικές λέξεις για ασφάλεια
+                if not vocab_list:
+                    vocab_list = ["γεια σου", "ναο", "τι κανείς", "πόσο", "ναι", "όχι"]
+
+                self.asr.setVocabulary(vocab_list, self.getParameter("Enable word spotting"))
+
+            self.memory.subscribeToEvent("WordRecognized", self.getName(), "onWordRecognized")
+            self.hasSubscribed = True
+
+        except RuntimeError, e:
+            self.mutex.release()
+            self.onUnload()
+            raise e
+        self.mutex.release()
+
+    def onInput_onStop(self):
+        if( self.bIsRunning ):
+            self.onUnload()
+            self.onStopped()
+
+    def onWordRecognized(self, key, value, message):
+        if(len(value) > 1 and value[1] >= self.getParameter("Confidence threshold (%)")/100.):
+            self.wordRecognized(value[0]) #~ ενεργοποιεί την έξοδο με το κείμενο που αναγνώρισε
+        else:
+            self.onNothing()
