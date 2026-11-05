@@ -5,7 +5,7 @@ import google.generativeai as genai
 # Αρχικοποίηση Flask app
 app = Flask(__name__)
 
-# Ρύθμιση του API key για το Gemini (αντικατάστησε με το δικό σου API Key)
+# Ρύθμιση του API key για το Gemini
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "YOUR_GEMINI_API_KEY"))
 
 # Αρχικοποίηση του μοντέλου Gemini
@@ -16,10 +16,10 @@ def chat():
     try:
         data = request.get_json(force=True, silent=True)
         
-        if not data or 'prompt' not in data:
+        if not data or 'text' not in data:
             return jsonify({"response": "Δεν έλαβα κάποιο μήνυμα."}), 400
         
-        user_prompt = data.get('prompt', '').strip()
+        user_prompt = data.get('text', '').strip()
         
         if not user_prompt:
             return jsonify({"response": "Το μήνυμα ήταν κενό."}), 400
@@ -39,5 +39,4 @@ def chat():
         return jsonify({"response": "Προέκυψε εσωτερικό σφάλμα στον server."}), 500
 
 if __name__ == '__main__':
-    # Ανοίγει σε όλες τις διεπαφές (0.0.0.0) στη θύρα 5000
     app.run(host='0.0.0.0', port=5000, debug=True)
